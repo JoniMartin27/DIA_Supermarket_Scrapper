@@ -1,5 +1,8 @@
+import os
 import time
 import threading
+
+import requests
 from selenium import webdriver
 from selenium.common import NoSuchElementException, StaleElementReferenceException
 from selenium.webdriver.chrome.options import Options
@@ -95,11 +98,16 @@ class DIAScrapper(object):
                 try:
                     nombre = producto.find_element(By.CSS_SELECTOR, 'p.search-product-card__product-name').text
                     precio = producto.find_element(By.CSS_SELECTOR, 'p.search-product-card__active-price').text
+                    image_url = producto.find_element(By.CSS_SELECTOR,
+                                                      'img.search-product-card__product-image').get_attribute('src')
                     if nombre not in self.products:  # Verificar si el producto ya ha sido guardado
                         self.products.append(nombre)
                         print("Producto:", nombre)
                         print("Precio:", precio)
+                        print("Imagen URL:", image_url)
                         print("----------------------------------")
+                        # Guardar la imagen
+                        self.save_image(image_url, nombre)
                 except NoSuchElementException:
                     pass  # No es necesario romper el bucle interno aquí
 
@@ -110,6 +118,21 @@ class DIAScrapper(object):
         while True:
             # Incrementar el desplazamiento de manera más gradual
             self.driver.execute_script("window.scrollBy(0, 10);")  # Cambia el valor de 10 según la velocidad deseada
+
+    def save_image(self, url, name):
+        try:
+            response = requests.get(url)
+            if response.status_code == 200:
+                # Crear el directorio IMAGES si no existe
+                if not os.path.exists("IMAGES"):
+                    os.makedirs("IMAGES")
+                with open(os.path.join("IMAGES", f"{name}.jpg"), 'wb') as f:
+                    f.write(response.content)
+                    print(f"Imagen guardada como {name}.jpg en el directorio IMAGES")
+            else:
+                print(f"No se pudo obtener la imagen {name}: Estado de la respuesta HTTP {response.status_code}")
+        except Exception as e:
+            print(f"No se pudo guardar la imagen {name}: {e}")
 
 
 if __name__ == "__main__":
