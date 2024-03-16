@@ -1,6 +1,8 @@
+import csv
 import os
 import time
 import threading
+import random  # Importa el módulo random
 
 import requests
 from selenium import webdriver
@@ -9,6 +11,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from unidecode import unidecode
 
 
 class DIAScrapper(object):
@@ -21,13 +24,40 @@ class DIAScrapper(object):
             "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Safari/537.36")
 
         self.driver = webdriver.Chrome(options=options)
+        self.driver.maximize_window()
         self.driver.implicitly_wait(2)
-        self.visited_categories = set()  # Conjunto para almacenar los enlaces de categorías visitadas
-        self.visited_subcategories = set()  # Conjunto para almacenar los enlaces de subcategorías visitadas
-        self.products = []  # Lista para almacenar los productos
+        self.visited_categories = set()
+        self.visited_subcategories = set()
+        self.products = []
+        self.cerrar_cookies = 0
+        self.csv_file = open('products.csv', 'w', newline='', encoding='utf-8')
+        self.csv_writer = csv.writer(self.csv_file)
+        self.csv_writer.writerow(
+            ['Producto', 'Precio', 'URL Imagen', 'Nutriscore'])  # Añadir 'Nutriscore'
+
+    def __del__(self):
+        try:
+            self.csv_file.close()
+        except AttributeError:
+            pass
 
     def scrape_categories(self, url):
+        time.sleep(2)
         self.driver.get(url)
+        if self.cerrar_cookies == 0:
+            time.sleep(5)
+            try:
+                # Espera hasta que la página esté completamente cargada
+                WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.ID, "onetrust-banner-sdk")))
+                # Cierra el aviso de cookies
+                accept_cookies_button = WebDriverWait(self.driver, 15).until(
+                    EC.element_to_be_clickable((By.ID, "onetrust-accept-btn-handler")))
+                accept_cookies_button.click()
+                print("Aviso de cookies cerrado exitosamente.")
+            except Exception as e:
+                print("Error al cerrar el aviso de cookies:", e)
+            self.cerrar_cookies = 1
+
         while True:
             categories = self.driver.find_elements(By.CSS_SELECTOR, 'a.category-item-link')
             next_category_link = None
@@ -43,18 +73,17 @@ class DIAScrapper(object):
 
             print("Categoria:", next_category_link.text)
             next_category_link.click()
-            # Esperar a que las subcategorías se carguen
             WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, 'span.sub-category-item__text')))
             self.recursive_scrape_subcategories()
 
     def recursive_scrape_subcategories(self):
         while True:
-            # Volver a cargar las subcategorías en cada iteración
+            time.sleep(2)
             WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, 'span.sub-category-item__text')))
 
-            visited_subcategories_in_category = set()  # Conjunto para almacenar los enlaces de subcategorías visitadas en la categoría actual
+            visited_subcategories_in_category = set()
             subcategories = self.driver.find_elements(By.CSS_SELECTOR, 'span.sub-category-item__text')
             next_subcategory_link = None
             for subcategory in subcategories:
@@ -74,25 +103,22 @@ class DIAScrapper(object):
                 break
 
             next_subcategory_link.click()
-            # Esperar a que las subcategorías se carguen
-            time.sleep(1)  # Esperar 1 segundo después de entrar en cada subcategoría
+            time.sleep(2)
             self.scrape_productos()
 
     def scrape_productos(self):
-        # Iniciar un hilo para hacer scroll hacia abajo gradualmente
         scroll_thread = threading.Thread(target=self.scroll_down_slowly)
         scroll_thread.start()
 
-        previous_product_count = 0  # Contador para el número de productos en la iteración anterior
+        previous_product_count = 0
 
         while True:
-            # Obtener los productos después de cada desplazamiento
             productos = self.driver.find_elements(By.CSS_SELECTOR, 'li[data-test-id="product-card-list-item"]')
 
-            current_product_count = len(productos)  # Contar el número actual de productos
+            current_product_count = len(productos)
 
             if current_product_count == previous_product_count:
-                break  # Si el número de productos no ha cambiado, salir del bucle
+                break
 
             for producto in productos:
                 try:
@@ -100,39 +126,32 @@ class DIAScrapper(object):
                     precio = producto.find_element(By.CSS_SELECTOR, 'p.search-product-card__active-price').text
                     image_url = producto.find_element(By.CSS_SELECTOR,
                                                       'img.search-product-card__product-image').get_attribute('src')
-                    if nombre not in self.products:  # Verificar si el producto ya ha sido guardado
+                    nombre = unidecode(nombre)
+                    if nombre not in self.products:
                         self.products.append(nombre)
                         print("Producto:", nombre)
                         print("Precio:", precio)
                         print("Imagen URL:", image_url)
+                        nutriscore = self.generate_nutriscore()  # Genera un Nutriscore aleatorio
+                        print("Nutriscore:", nutriscore)
                         print("----------------------------------")
-                        # Guardar la imagen
-                        self.save_image(image_url, nombre)
+                        self.csv_writer.writerow(
+                            ['', '', nombre, precio, image_url, nutriscore])  # Escribe el Nutriscore en el archivo CSV
                 except NoSuchElementException:
-                    pass  # No es necesario romper el bucle interno aquí
+                    pass
+                except Exception as e:
+                    print("Error:", e)
+                    continue
 
             previous_product_count = current_product_count
 
+    def generate_nutriscore(self):
+        nutriscores = ['A', 'B', 'C', 'D', 'E']  # Lista de posibles Nutriscores
+        return random.choice(nutriscores)  # Devuelve un Nutriscore aleatorio
+
     def scroll_down_slowly(self):
-
         while True:
-            # Incrementar el desplazamiento de manera más gradual
-            self.driver.execute_script("window.scrollBy(0, 10);")  # Cambia el valor de 10 según la velocidad deseada
-
-    def save_image(self, url, name):
-        try:
-            response = requests.get(url)
-            if response.status_code == 200:
-                # Crear el directorio IMAGES si no existe
-                if not os.path.exists("IMAGES"):
-                    os.makedirs("IMAGES")
-                with open(os.path.join("IMAGES", f"{name}.jpg"), 'wb') as f:
-                    f.write(response.content)
-                    print(f"Imagen guardada como {name}.jpg en el directorio IMAGES")
-            else:
-                print(f"No se pudo obtener la imagen {name}: Estado de la respuesta HTTP {response.status_code}")
-        except Exception as e:
-            print(f"No se pudo guardar la imagen {name}: {e}")
+            self.driver.execute_script("window.scrollBy(0, 5);")
 
 
 if __name__ == "__main__":
