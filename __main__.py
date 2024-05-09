@@ -17,7 +17,7 @@ from unidecode import unidecode
 
 
 class DIAScrapper(object):
-    search_url = 'https://www.compraonline.alcampo.es/categories'
+    search_url = 'https://www.compraonline.alcampo.es/categories/frescos'
 
     def __init__(self):
         options = Options()
@@ -60,9 +60,24 @@ class DIAScrapper(object):
                 print("Cookie banner not found or unable to close.")
 
             self.cerrar_cookies = 1
+            try:
+                # Espera hasta que aparezca el modal
+                modal = WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.ID, "div.delivery-book-modal-content")))
+
+                # Encuentra el botón o enlace para cerrar el modal
+                close_button = WebDriverWait(modal, 10).until(EC.element_to_be_clickable((By.CSS_SELECTOR, 'span.box-close"]')))
+
+                # Haz clic en el botón para cerrar el modal
+                close_button.click()
+
+                print("Modal cerrado exitosamente.")
+
+            except Exception as e:
+                print("Error al cerrar el modal:", e)
+
 
         while True:
-            categories = self.driver.find_elements(By.CSS_SELECTOR, 'a.category-item-link')
+            categories = self.driver.find_elements(By.CSS_SELECTOR, 'a.link__Link-sc-14ymsi2-0 bgwHFk link__Link-sc-14ymsi2-0 nav-list-item__StyledNavListItemLink-sc-avd605-1 bgwHFk hBPgqm')
             next_category_link = None
             for category in categories:
                 category_href = category.get_attribute('href')
@@ -77,7 +92,7 @@ class DIAScrapper(object):
             print("Categoria:", next_category_link.text)
             next_category_link.click()
             WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, 'span.sub-category-item__text')))
+                EC.presence_of_element_located((By.CSS_SELECTOR, 'span._text_f6lbl_1 _text--m_f6lbl_23')))
             self.recursive_scrape_subcategories()
 
     def recursive_scrape_subcategories(self):
@@ -85,13 +100,13 @@ class DIAScrapper(object):
             time.sleep(2)
             try:
                 WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, 'span.sub-category-item__text')))
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'span._text_f6lbl_1 _text--m_f6lbl_23')))
             except TimeoutException:
                 print("Timeout occurred while waiting for subcategory element.")
                 continue  # Skip to the next iteration of the loop
 
             visited_subcategories_in_category = set()
-            subcategories = self.driver.find_elements(By.CSS_SELECTOR, 'span.sub-category-item__text')
+            subcategories = self.driver.find_elements(By.CSS_SELECTOR, 'span._text_f6lbl_1 _text--m_f6lbl_23')
             next_subcategory_link = None
             for subcategory in subcategories:
                 try:
@@ -120,7 +135,7 @@ class DIAScrapper(object):
         previous_product_count = 0
 
         while True:
-            productos = self.driver.find_elements(By.CSS_SELECTOR, 'li[data-test-id="product-card-list-item"]')
+            productos = self.driver.find_elements(By.CSS_SELECTOR, 'div[data-test-id="fop-wrapper:65731ee6-48c6-44f3-a504-698fb6c62f25]')
 
             current_product_count = len(productos)
 
@@ -129,10 +144,10 @@ class DIAScrapper(object):
 
             for producto in productos:
                 try:
-                    nombre = producto.find_element(By.CSS_SELECTOR, 'p.search-product-card__product-name').text
-                    precio = producto.find_element(By.CSS_SELECTOR, 'p.search-product-card__active-price').text
+                    nombre = producto.find_element(By.CSS_SELECTOR, 'h3._text_f6lbl_1 _text--m_f6lbl_23').text
+                    precio = producto.find_element(By.CSS_SELECTOR, 'span._text_f6lbl_1 _text--m_f6lbl_23 price__PriceText-sc-1nlvmq9-0 BCfDm').text
                     image_url = producto.find_element(By.CSS_SELECTOR,
-                                                      'img.search-product-card__product-image').get_attribute('src')
+                                                      'img.image_StyledLazyLoadImage-sc-wilgi-0.foQxui').get_attribute('src')
                     nombre = unidecode(nombre)
                     if nombre not in self.products:
                         self.products.append(nombre)
