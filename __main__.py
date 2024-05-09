@@ -7,6 +7,8 @@ import random  # Importa el módulo random
 import requests
 from selenium import webdriver
 from selenium.common import NoSuchElementException, StaleElementReferenceException
+from selenium.common.exceptions import TimeoutException
+
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -15,7 +17,7 @@ from unidecode import unidecode
 
 
 class DIAScrapper(object):
-    search_url = 'https://www.dia.es/charcuteria-y-quesos/jamon-cocido-lacon-fiambres-y-mortadela/c/L2001'
+    search_url = 'https://www.compraonline.alcampo.es/categories'
 
     def __init__(self):
         options = Options()
@@ -25,7 +27,7 @@ class DIAScrapper(object):
 
         self.driver = webdriver.Chrome(options=options)
         self.driver.maximize_window()
-        self.driver.implicitly_wait(2)
+        self.driver.implicitly_wait(5)
         self.visited_categories = set()
         self.visited_subcategories = set()
         self.products = []
@@ -47,15 +49,16 @@ class DIAScrapper(object):
         if self.cerrar_cookies == 0:
             time.sleep(5)
             try:
-                # Espera hasta que la página esté completamente cargada
+                # Wait for the cookie banner to appear
                 WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.ID, "onetrust-banner-sdk")))
-                # Cierra el aviso de cookies
+                # Close the cookie banner
                 accept_cookies_button = WebDriverWait(self.driver, 15).until(
                     EC.element_to_be_clickable((By.ID, "onetrust-accept-btn-handler")))
                 accept_cookies_button.click()
-                print("Aviso de cookies cerrado exitosamente.")
-            except Exception as e:
-                print("Error al cerrar el aviso de cookies:", e)
+                print("Cookie banner closed successfully.")
+            except TimeoutException:
+                print("Cookie banner not found or unable to close.")
+
             self.cerrar_cookies = 1
 
         while True:
@@ -80,8 +83,12 @@ class DIAScrapper(object):
     def recursive_scrape_subcategories(self):
         while True:
             time.sleep(2)
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, 'span.sub-category-item__text')))
+            try:
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'span.sub-category-item__text')))
+            except TimeoutException:
+                print("Timeout occurred while waiting for subcategory element.")
+                continue  # Skip to the next iteration of the loop
 
             visited_subcategories_in_category = set()
             subcategories = self.driver.find_elements(By.CSS_SELECTOR, 'span.sub-category-item__text')
