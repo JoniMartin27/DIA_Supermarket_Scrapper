@@ -1,8 +1,9 @@
+import random  # Importa el módulo random
 import csv
 import os
 import time
 import threading
-import random  # Importa el módulo random
+
 
 import requests
 from selenium import webdriver
@@ -17,7 +18,7 @@ from unidecode import unidecode
 
 
 class DIAScrapper(object):
-    search_url = 'https://www.compraonline.alcampo.es/categories/frescos'
+    search_url = 'https://www.dia.es/charcuteria-y-quesos/jamon-cocido-lacon-fiambres-y-mortadela/c/L2001'
 
     def __init__(self):
         options = Options()
@@ -31,11 +32,12 @@ class DIAScrapper(object):
         self.visited_categories = set()
         self.visited_subcategories = set()
         self.products = []
+        self.categories = []
+        self.subcategories = []
         self.cerrar_cookies = 0
         self.csv_file = open('products.csv', 'w', newline='', encoding='utf-8')
         self.csv_writer = csv.writer(self.csv_file)
-        self.csv_writer.writerow(
-            ['Producto', 'Precio', 'URL Imagen', 'Nutriscore'])  # Añadir 'Nutriscore'
+        self.csv_writer.writerow(['supermercado', 'categoria', 'subcategoria', 'Producto', 'Precio', 'URL Imagen'])  # Añadir 'Nutriscore'
 
     def __del__(self):
         try:
@@ -60,30 +62,16 @@ class DIAScrapper(object):
                 print("Cookie banner not found or unable to close.")
 
             self.cerrar_cookies = 1
-            try:
-                # Espera hasta que aparezca el modal
-                modal = WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.ID, "div.delivery-book-modal-content")))
-
-                # Encuentra el botón o enlace para cerrar el modal
-                close_button = WebDriverWait(modal, 10).until(EC.element_to_be_clickable((By.CSS_SELECTOR, 'span.box-close"]')))
-
-                # Haz clic en el botón para cerrar el modal
-                close_button.click()
-
-                print("Modal cerrado exitosamente.")
-
-            except Exception as e:
-                print("Error al cerrar el modal:", e)
-
 
         while True:
-            categories = self.driver.find_elements(By.CSS_SELECTOR, 'a.link__Link-sc-14ymsi2-0 bgwHFk link__Link-sc-14ymsi2-0 nav-list-item__StyledNavListItemLink-sc-avd605-1 bgwHFk hBPgqm')
+            categories = self.driver.find_elements(By.CSS_SELECTOR, 'a.category-item-link')
             next_category_link = None
             for category in categories:
                 category_href = category.get_attribute('href')
                 if category_href not in self.visited_categories:
                     next_category_link = category
                     self.visited_categories.add(category_href)
+                    self.categories.append(category.text)  # Add category to list
                     break
 
             if next_category_link is None:
@@ -92,21 +80,21 @@ class DIAScrapper(object):
             print("Categoria:", next_category_link.text)
             next_category_link.click()
             WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, 'span._text_f6lbl_1 _text--m_f6lbl_23')))
-            self.recursive_scrape_subcategories()
+                EC.presence_of_element_located((By.CSS_SELECTOR, 'span.sub-category-item__text')))
+            self.recursive_scrape_subcategories(next_category_link.text)  # Pass category name
 
-    def recursive_scrape_subcategories(self):
+    def recursive_scrape_subcategories(self, category_name):
         while True:
             time.sleep(2)
             try:
                 WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, 'span._text_f6lbl_1 _text--m_f6lbl_23')))
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'span.sub-category-item__text')))
             except TimeoutException:
                 print("Timeout occurred while waiting for subcategory element.")
                 continue  # Skip to the next iteration of the loop
 
             visited_subcategories_in_category = set()
-            subcategories = self.driver.find_elements(By.CSS_SELECTOR, 'span._text_f6lbl_1 _text--m_f6lbl_23')
+            subcategories = self.driver.find_elements(By.CSS_SELECTOR, 'span.sub-category-item__text')
             next_subcategory_link = None
             for subcategory in subcategories:
                 try:
@@ -117,6 +105,7 @@ class DIAScrapper(object):
                             next_subcategory_link = subcategory
                             self.visited_subcategories.add(subcategory_href)
                             visited_subcategories_in_category.add(subcategory_href)
+                            self.subcategories.append((category_name, subcategory.text))  # Add subcategory to list
                             break
                 except StaleElementReferenceException:
                     continue
@@ -126,16 +115,16 @@ class DIAScrapper(object):
 
             next_subcategory_link.click()
             time.sleep(2)
-            self.scrape_productos()
+            self.scrape_productos(category_name, subcategory.text)  # Pass category and subcategory names
 
-    def scrape_productos(self):
+    def scrape_productos(self, category_name, subcategory_name):
         scroll_thread = threading.Thread(target=self.scroll_down_slowly)
         scroll_thread.start()
 
         previous_product_count = 0
 
         while True:
-            productos = self.driver.find_elements(By.CSS_SELECTOR, 'div[data-test-id="fop-wrapper:65731ee6-48c6-44f3-a504-698fb6c62f25]')
+            productos = self.driver.find_elements(By.CSS_SELECTOR, 'li[data-test-id="product-card-list-item"]')
 
             current_product_count = len(productos)
 
@@ -144,21 +133,18 @@ class DIAScrapper(object):
 
             for producto in productos:
                 try:
-                    nombre = producto.find_element(By.CSS_SELECTOR, 'h3._text_f6lbl_1 _text--m_f6lbl_23').text
-                    precio = producto.find_element(By.CSS_SELECTOR, 'span._text_f6lbl_1 _text--m_f6lbl_23 price__PriceText-sc-1nlvmq9-0 BCfDm').text
-                    image_url = producto.find_element(By.CSS_SELECTOR,
-                                                      'img.image_StyledLazyLoadImage-sc-wilgi-0.foQxui').get_attribute('src')
+                    supermercado="dia"
+                    nombre = producto.find_element(By.CSS_SELECTOR, 'p.search-product-card__product-name').text
+                    precio = producto.find_element(By.CSS_SELECTOR, 'p.search-product-card__active-price').text
+                    image_url = producto.find_element(By.CSS_SELECTOR, 'img.search-product-card__product-image').get_attribute('src')
                     nombre = unidecode(nombre)
                     if nombre not in self.products:
                         self.products.append(nombre)
                         print("Producto:", nombre)
                         print("Precio:", precio)
                         print("Imagen URL:", image_url)
-                        nutriscore = self.generate_nutriscore()  # Genera un Nutriscore aleatorio
-                        print("Nutriscore:", nutriscore)
                         print("----------------------------------")
-                        self.csv_writer.writerow(
-                            ['', '', nombre, precio, image_url, nutriscore])  # Escribe el Nutriscore en el archivo CSV
+                        self.csv_writer.writerow([supermercado, category_name, subcategory_name, nombre, precio, image_url])  # Write category and subcategory to CSV
                 except NoSuchElementException:
                     pass
                 except Exception as e:
@@ -167,9 +153,6 @@ class DIAScrapper(object):
 
             previous_product_count = current_product_count
 
-    def generate_nutriscore(self):
-        nutriscores = ['A', 'B', 'C', 'D', 'E']  # Lista de posibles Nutriscores
-        return random.choice(nutriscores)  # Devuelve un Nutriscore aleatorio
 
     def scroll_down_slowly(self):
         while True:
