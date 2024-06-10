@@ -159,6 +159,6 @@ class DIAScrapper(object):
             self.driver.execute_script("window.scrollBy(0, 5);")
 
 
-if __name__ == "__main__":
+if __name__ == "Scrapper-dia":
     scrapper = DIAScrapper()
     scrapper.scrape_categories(DIAScrapper.search_url)
